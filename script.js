@@ -7,8 +7,8 @@ let userSettings = JSON.parse(localStorage.getItem('taskmaster_settings')) || {
     enableConfetti: true,
     enableBgParticles: true
 };
+const GOOGLE_CLIENT_ID = '980379621542-ocdrt14dvmdhvakkoe114eb6406v8t85.apps.googleusercontent.com';
 let googleUser = JSON.parse(localStorage.getItem('sparklish_google_user')) || null;
-let googleClientId = localStorage.getItem('sparklish_google_client_id') || '';
 let currentFilter = 'all'; // all, pending, completed
 let currentCategory = 'all'; // all, 工作, 個人, 學習, 健康
 let currentTheme = localStorage.getItem('taskmaster_theme') || 'system';
@@ -55,10 +55,7 @@ function openSettingsModal() {
     document.getElementById('setting-enable-confetti').checked = userSettings.enableConfetti ?? true;
     document.getElementById('setting-enable-bg-particles').checked = userSettings.enableBgParticles ?? true;
     
-    const settingGId = document.getElementById('setting-google-client-id');
-    if (settingGId) settingGId.value = googleClientId;
     updateGoogleUserUI();
-
     document.getElementById('settings-modal').classList.remove('hidden');
 }
 
@@ -78,14 +75,6 @@ function saveSettings() {
     userSettings.defaultCategory = document.getElementById('setting-default-category').value;
     userSettings.enableConfetti = document.getElementById('setting-enable-confetti').checked;
     userSettings.enableBgParticles = document.getElementById('setting-enable-bg-particles').checked;
-
-    const settingGId = document.getElementById('setting-google-client-id');
-    if (settingGId && settingGId.value.trim() !== googleClientId) {
-        googleClientId = settingGId.value.trim();
-        localStorage.setItem('sparklish_google_client_id', googleClientId);
-        initGoogleAuth();
-        updateGoogleUserUI();
-    }
 
     localStorage.setItem('taskmaster_settings', JSON.stringify(userSettings));
     initSettingsUI();
@@ -108,9 +97,7 @@ function resetAllData() {
         localStorage.removeItem('taskmaster_tasks');
         localStorage.removeItem('taskmaster_settings');
         localStorage.removeItem('sparklish_google_user');
-        localStorage.removeItem('sparklish_google_client_id');
         googleUser = null;
-        googleClientId = '';
         tasks = [];
         userSettings = {
             userName: '',
@@ -558,41 +545,44 @@ function animateParticles() {
 
 // 初始化 Google GIS SDK
 function initGoogleAuth() {
-    if (!googleClientId) return;
-
     if (window.google?.accounts?.id) {
         try {
             google.accounts.id.initialize({
-                client_id: googleClientId,
+                client_id: GOOGLE_CLIENT_ID,
                 callback: handleGoogleCredentialResponse,
                 auto_select: false,
                 cancel_on_tap_outside: true
             });
 
-            // 渲染到 Google 登入設定 Modal 中的官方按鈕
-            const modalBtnContainer = document.getElementById('modal-gis-button');
-            if (modalBtnContainer) {
-                modalBtnContainer.innerHTML = '';
-                google.accounts.id.renderButton(modalBtnContainer, {
+            // 渲染官方 Google 登入按鈕至側邊欄容器
+            const btnContainer = document.getElementById('google-signin-btn-container');
+            if (btnContainer && !googleUser) {
+                btnContainer.innerHTML = '';
+                google.accounts.id.renderButton(btnContainer, {
                     theme: 'outline',
                     size: 'large',
                     type: 'standard',
                     shape: 'pill',
                     text: 'signin_with',
                     locale: 'zh-TW',
-                    width: 260
+                    width: 240
                 });
+
+                // 官方按鈕渲染成功後隱藏備用純 HTML 按鈕
+                const fallbackBtn = document.getElementById('google-signin-btn');
+                if (fallbackBtn) fallbackBtn.classList.add('hidden');
+            }
+
+            // 若尚未登入，嘗試呼叫 One Tap 提示
+            if (!googleUser) {
+                google.accounts.id.prompt();
             }
         } catch (err) {
             console.warn('Google Identity Services 初始化提示:', err);
         }
     } else {
-        // 若 SDK 尚未載入完成，稍後重試一次
-        setTimeout(() => {
-            if (window.google?.accounts?.id && googleClientId) {
-                initGoogleAuth();
-            }
-        }, 800);
+        // SDK 還在載入時，每隔 500ms 重試一次，直到載入完成
+        setTimeout(initGoogleAuth, 500);
     }
 }
 
@@ -645,19 +635,18 @@ function applyGoogleUserLogin(userData) {
 
     updateGoogleUserUI();
     updateViewTitle();
-    closeGoogleAuthModal();
 
     // 觸發彩帶慶祝
     if (typeof confetti === 'function' && userSettings.enableConfetti) {
         confetti({ particleCount: 70, spread: 60, origin: { y: 0.8 } });
     }
 
-    showModal('登入成功', `歡迎回來，${userData.name}！已為您完成個人化儀表板綁定。`, 'fa-solid fa-circle-check');
+    showModal('登入成功', `歡迎回來，${userData.name}！已為您成功連結 Google 帳號。`, 'fa-solid fa-circle-check');
 }
 
 // 更新畫面所有與 Google 帳號連動的 UI (側邊欄、頂部 Header、設定視窗)
 function updateGoogleUserUI() {
-    const signinBtn = document.getElementById('google-signin-btn');
+    const signinWrapper = document.getElementById('google-signin-wrapper');
     const profileCard = document.getElementById('google-profile-card');
     const userAvatar = document.getElementById('google-user-avatar');
     const userName = document.getElementById('google-user-name');
@@ -666,19 +655,10 @@ function updateGoogleUserUI() {
     const headerUserText = document.getElementById('header-user-text');
     const headerAvatarContainer = document.getElementById('header-avatar-container');
     const settingGoogleStatus = document.getElementById('setting-google-status');
-    const settingGoogleClientId = document.getElementById('setting-google-client-id');
-    const modalInputClientId = document.getElementById('modal-input-client-id');
-    const modalConnectedUser = document.getElementById('modal-connected-user');
-    const modalUserAvatar = document.getElementById('modal-user-avatar');
-    const modalUserName = document.getElementById('modal-user-name');
-    const modalUserEmail = document.getElementById('modal-user-email');
-
-    if (settingGoogleClientId) settingGoogleClientId.value = googleClientId;
-    if (modalInputClientId) modalInputClientId.value = googleClientId;
 
     if (googleUser) {
         // 側邊欄：隱藏登入按鈕，顯示個人卡片
-        if (signinBtn) signinBtn.classList.add('hidden');
+        if (signinWrapper) signinWrapper.classList.add('hidden');
         if (profileCard) {
             profileCard.classList.remove('hidden');
             profileCard.classList.add('flex');
@@ -699,18 +679,9 @@ function updateGoogleUserUI() {
             settingGoogleStatus.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold';
         }
 
-        // Google 認證彈窗已連線區塊
-        if (modalConnectedUser) {
-            modalConnectedUser.classList.remove('hidden');
-            modalConnectedUser.classList.add('flex');
-        }
-        if (modalUserAvatar) modalUserAvatar.src = googleUser.picture || 'icons/icon-64.png';
-        if (modalUserName) modalUserName.innerText = googleUser.name;
-        if (modalUserEmail) modalUserEmail.innerText = googleUser.email;
-
     } else {
         // 未登入狀態
-        if (signinBtn) signinBtn.classList.remove('hidden');
+        if (signinWrapper) signinWrapper.classList.remove('hidden');
         if (profileCard) {
             profileCard.classList.add('hidden');
             profileCard.classList.remove('flex');
@@ -725,80 +696,27 @@ function updateGoogleUserUI() {
             settingGoogleStatus.innerText = '未登入';
             settingGoogleStatus.className = 'text-[10px] px-2 py-0.5 rounded-full bg-black/20 opacity-60';
         }
-
-        if (modalConnectedUser) {
-            modalConnectedUser.classList.add('hidden');
-            modalConnectedUser.classList.remove('flex');
-        }
     }
 }
 
 // 點擊「使用 Google 登入」或頂部頭像觸發
 function handleGoogleSignInClick() {
     if (googleUser) {
-        // 若已登入，開啟管理視窗
-        openGoogleAuthModal();
+        if (confirm(`目前已登入：${googleUser.name} (${googleUser.email})\n\n確定要登出 Google 帳號嗎？`)) {
+            googleSignOut();
+        }
         return;
     }
 
-    // 若已設定 Client ID 且 SDK 就緒，嘗試喚起 Google 官方提示
-    if (googleClientId && window.google?.accounts?.id) {
+    if (window.google?.accounts?.id) {
         try {
-            google.accounts.id.prompt((notification) => {
-                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                    openGoogleAuthModal();
-                }
-            });
-            return;
+            google.accounts.id.prompt();
         } catch (e) {
             console.warn(e);
         }
+    } else {
+        showModal('Google 載入中', '正在連線 Google 登入服務，請稍候 1~2 秒後再試。', 'fa-brands fa-google');
     }
-
-    // 尚未設定 Client ID 或初次使用，直接彈出指引與展示登入視窗
-    openGoogleAuthModal();
-}
-
-// 開啟 Google 認證設定 Modal
-function openGoogleAuthModal() {
-    updateGoogleUserUI();
-    initGoogleAuth();
-    document.getElementById('google-auth-modal').classList.remove('hidden');
-}
-
-// 關閉 Google 認證設定 Modal
-function closeGoogleAuthModal() {
-    document.getElementById('google-auth-modal').classList.add('hidden');
-}
-
-// 儲存 Google Client ID 並立即初始化
-function saveAndInitGoogleClientId() {
-    const input = document.getElementById('modal-input-client-id');
-    const val = input.value.trim();
-    if (!val) {
-        showModal('提示', '請輸入有效的 Google OAuth 2.0 Client ID。', 'fa-solid fa-circle-exclamation');
-        return;
-    }
-
-    googleClientId = val;
-    localStorage.setItem('sparklish_google_client_id', googleClientId);
-    initGoogleAuth();
-    updateGoogleUserUI();
-    showModal('設定成功', 'Google Client ID 已儲存！已為您啟動 Google 官方登入按鈕。', 'fa-solid fa-circle-check');
-}
-
-// 快速體驗展示帳號（模擬 Google 帳號登入）
-function loginWithDemoGoogleUser() {
-    const demoUser = {
-        id: 'demo_google_888888',
-        name: userSettings.userName || '趙凱樂',
-        givenName: '凱樂',
-        email: 'kailer.chao@gmail.com',
-        picture: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
-        provider: 'google_demo',
-        loggedInAt: new Date().toISOString()
-    };
-    applyGoogleUserLogin(demoUser);
 }
 
 // 登出 Google 帳號
@@ -814,6 +732,7 @@ function googleSignOut() {
 
     updateGoogleUserUI();
     updateViewTitle();
-    closeGoogleAuthModal();
+    // 重新渲染 Google 官方登入按鈕
+    initGoogleAuth();
     showModal('已登出', '您已成功登出 Google 帳號。', 'fa-solid fa-arrow-right-from-bracket');
 }
