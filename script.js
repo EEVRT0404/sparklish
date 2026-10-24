@@ -21,7 +21,10 @@ window.onload = () => {
         document.getElementById('bg-canvas').style.display = 'none';
     }
     updateCurrentDate();
-    renderTasks();
+    initFilterFromHash();
+
+    // 監聽網址 Hash (#) 變化，支援上一頁/下一頁切換
+    window.addEventListener('hashchange', handleHashChange);
 
     // 監聽系統深色模式變化
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -208,13 +211,41 @@ function clearCompleted() {
     showModal('成功', `已清理 ${completedCount} 項已完成任務。`, 'fa-solid fa-trash-check');
 }
 
-function setFilter(filter) {
+function setFilter(filter, updateHash = true) {
+    const validFilters = ['all', 'pending', 'completed'];
+    if (!validFilters.includes(filter)) {
+        filter = 'all';
+    }
     currentFilter = filter;
+
     document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active'));
-    document.getElementById(`nav-${filter}`).classList.add('active');
+    const activeBtn = document.getElementById(`nav-${filter}`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    }
+
+    if (updateHash && window.location.hash.slice(1).toLowerCase() !== filter) {
+        window.location.hash = filter;
+    }
 
     updateViewTitle();
     renderTasks();
+}
+
+function handleHashChange() {
+    const hash = window.location.hash.slice(1).toLowerCase();
+    if (['all', 'pending', 'completed'].includes(hash) && hash !== currentFilter) {
+        setFilter(hash, false);
+    }
+}
+
+function initFilterFromHash() {
+    const hash = window.location.hash.slice(1).toLowerCase();
+    if (['all', 'pending', 'completed'].includes(hash)) {
+        setFilter(hash, false);
+    } else {
+        setFilter('all', false);
+    }
 }
 
 function updateViewTitle() {
