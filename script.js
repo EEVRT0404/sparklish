@@ -282,6 +282,28 @@ function renderTasks() {
     if (filtered.length === 0) {
         emptyEl.classList.remove('hidden');
         emptyEl.classList.add('flex');
+
+        const emptyIcon = document.getElementById('empty-icon');
+        const emptyTitle = document.getElementById('empty-title');
+        const emptySubtitle = document.getElementById('empty-subtitle');
+
+        if (searchKeyword) {
+            if (emptyIcon) emptyIcon.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+            if (emptyTitle) emptyTitle.innerText = '找不到符合條件的任務';
+            if (emptySubtitle) emptySubtitle.innerText = '請嘗試使用其他關鍵字搜尋。';
+        } else if (currentFilter === 'completed') {
+            if (emptyIcon) emptyIcon.innerHTML = '<i class="fa-regular fa-circle-check"></i>';
+            if (emptyTitle) emptyTitle.innerText = '目前沒有已完成的任務';
+            if (emptySubtitle) emptySubtitle.innerText = '完成進行中的任務後，將會在此顯示。';
+        } else if (currentFilter === 'pending') {
+            if (emptyIcon) emptyIcon.innerHTML = '<i class="fa-regular fa-clock"></i>';
+            if (emptyTitle) emptyTitle.innerText = '太棒了，目前沒有進行中的任務！';
+            if (emptySubtitle) emptySubtitle.innerText = '在下方建立新任務開始充實的一天。';
+        } else {
+            if (emptyIcon) emptyIcon.innerHTML = '<i class="fa-solid fa-clipboard-check"></i>';
+            if (emptyTitle) emptyTitle.innerText = '太棒了，目前沒有待處理的任務！';
+            if (emptySubtitle) emptySubtitle.innerText = '在下方建立新任務開始充實的一天。';
+        }
     } else {
         emptyEl.classList.add('hidden');
         emptyEl.classList.remove('flex');
