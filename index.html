@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="icons/icon-64.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="manifest" href="manifest.json">
+    <title>Sparklish 閃光達成</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="tailwind.config.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="h-full text-[var(--color-text)] bg-[var(--color-bg)] overflow-hidden flex flex-col antialiased">
+
+    <!-- 背景動態粒子背景 -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- 主應用容器 -->
+    <div class="relative z-10 flex-1 flex h-full overflow-hidden">
+
+        <!-- 左側側邊欄 (Sidebar) -->
+        <aside id="sidebar" class="w-72 glass-sidebar flex-col justify-between hidden md:flex shrink-0 transition-all duration-300 z-20">
+            <div class="p-6">
+                <!-- App Logo/Header (指向相對路徑 Logo.png) -->
+                <div class="flex items-center gap-3 mb-8">
+                    <div class="w-10 h-10 rounded-xl bg-[var(--color-primary)]/10 border border-[var(--color-border)] flex items-center justify-center overflow-hidden shrink-0 shadow-md">
+                        <img src="Logo.png" alt="Sparklish Logo" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <!-- 當 Logo.png 尚未載入時顯示備用 icon -->
+                        <div class="w-full h-full bg-[var(--color-primary)] text-white items-center justify-center text-lg hidden">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-extrabold tracking-tight gradient-text">Sparklish</h1>
+                        <p class="text-[10px] opacity-60">閃光達成 Pro</p>
+                    </div>
+                </div>
+
+                <!-- 導覽分類 -->
+                <div class="space-y-6">
+                    <div>
+                        <div class="text-[11px] font-bold uppercase tracking-wider opacity-40 mb-2 px-3">檢視與狀態</div>
+                        <nav class="space-y-1">
+                            <button onclick="setFilter('all')" id="nav-all" class="nav-link active w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-left">
+                                <span class="flex items-center gap-3"><i class="fa-solid fa-sun w-5 text-amber-400"></i>全部</span>
+                                <span id="count-all" class="text-xs opacity-60 bg-black/20 px-2 py-0.5 rounded-full">0</span>
+                            </button>
+                            <button onclick="setFilter('pending')" id="nav-pending" class="nav-link w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-left">
+                                <span class="flex items-center gap-3"><i class="fa-regular fa-clock w-5 text-blue-400"></i> 進行中</span>
+                                <span id="count-pending" class="text-xs opacity-60 bg-black/20 px-2 py-0.5 rounded-full">0</span>
+                            </button>
+                            <button onclick="setFilter('completed')" id="nav-completed" class="nav-link w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm text-left">
+                                <span class="flex items-center gap-3"><i class="fa-regular fa-circle-check w-5 text-emerald-400"></i> 已完成</span>
+                                <span id="count-completed" class="text-xs opacity-60 bg-black/20 px-2 py-0.5 rounded-full">0</span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <!-- 分類分類選單 -->
+                    <div>
+                        <div class="text-[11px] font-bold uppercase tracking-wider opacity-40 mb-2 px-3">類別篩選</div>
+                        <nav class="space-y-1" id="category-nav">
+                            <button onclick="setCategoryFilter('all')" class="cat-link text-xs w-full flex items-center gap-3 px-3 py-2 rounded-lg opacity-80 hover:opacity-100 transition">
+                                <i class="fa-solid fa-layer-group text-slate-400"></i> 所有類別
+                            </button>
+                            <button onclick="setCategoryFilter('工作')" class="cat-link text-xs w-full flex items-center gap-3 px-3 py-2 rounded-lg opacity-80 hover:opacity-100 transition">
+                                <i class="fa-solid fa-briefcase text-blue-400"></i> 工作
+                            </button>
+                            <button onclick="setCategoryFilter('個人')" class="cat-link text-xs w-full flex items-center gap-3 px-3 py-2 rounded-lg opacity-80 hover:opacity-100 transition">
+                                <i class="fa-solid fa-user text-purple-400"></i> 個人
+                            </button>
+                            <button onclick="setCategoryFilter('學習')" class="cat-link text-xs w-full flex items-center gap-3 px-3 py-2 rounded-lg opacity-80 hover:opacity-100 transition">
+                                <i class="fa-solid fa-book text-emerald-400"></i> 學習
+                            </button>
+                            <button onclick="setCategoryFilter('健康')" class="cat-link text-xs w-full flex items-center gap-3 px-3 py-2 rounded-lg opacity-80 hover:opacity-100 transition">
+                                <i class="fa-solid fa-heart-pulse text-rose-400"></i> 健康
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 側邊欄底部：統計進度與設定 -->
+            <div class="p-4 border-t border-[var(--color-border)] space-y-4">
+                <!-- 完成度簡報 -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1.5 opacity-80">
+                        <span>整體完成進度</span>
+                        <span id="stat-rate" class="font-bold">0%</span>
+                    </div>
+                    <div class="w-full bg-black/20 rounded-full h-1.5 overflow-hidden">
+                        <div id="progress-bar" class="bg-[var(--color-primary)] h-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 工具區 (匯入匯出 & 設定) -->
+                <div class="flex items-center justify-between pt-2">
+                    <span class="text-xs opacity-60 font-medium">系統選單</span>
+                    <div class="flex gap-1.5">
+                        <button onclick="exportTasks()" title="匯出 JSON 備份" class="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-primary)]/20 transition text-xs">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
+                        <button onclick="importTasksTrigger()" title="匯入 JSON 備份" class="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-primary)]/20 transition text-xs">
+                            <i class="fa-solid fa-upload"></i>
+                        </button>
+                        <button onclick="openSettingsModal()" title="系統設定" class="p-1.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-primary)]/20 transition text-xs">
+                            <i class="fa-solid fa-gear"></i>
+                        </button>
+                        <input type="file" id="import-file" class="hidden" accept=".json" onchange="importTasks(event)">
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右側主內容區 -->
+        <main class="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+            
+            <!-- 頂部 Header & 搜尋/排序 Bar -->
+            <header class="p-4 sm:p-6 border-b border-[var(--color-border)] flex flex-wrap items-center justify-between gap-4 glass-card">
+                <div class="flex items-center gap-3">
+                    <button onclick="toggleMobileSidebar()" class="md:hidden p-2 rounded-lg border border-[var(--color-border)] text-sm">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <div>
+                        <h2 id="view-title" class="text-xl sm:text-2xl font-bold tracking-tight">我的一天</h2>
+                        <p id="current-date" class="text-xs opacity-60">加載中...</p>
+                    </div>
+                </div>
+
+                <!-- 搜尋與排序欄位 -->
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <div class="relative flex-1 sm:w-56">
+                        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 opacity-40 text-xs"></i>
+                        <input type="text" id="search-input" oninput="renderTasks()" placeholder="搜尋待辦事項..." class="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl pl-8 pr-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]">
+                    </div>
+                    
+                    <select id="sort-select" onchange="renderTasks()" class="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs sm:text-sm focus:outline-none">
+                        <option value="created-desc">最新建立</option>
+                        <option value="created-asc">最舊建立</option>
+                        <option value="priority-desc">優先級高→低</option>
+                        <option value="date-asc">截止日(近→遠)</option>
+                    </select>
+
+                    <button onclick="clearCompleted()" title="清理已完成" class="p-2 rounded-xl border border-[var(--color-border)] text-red-400 hover:bg-red-500/10 transition text-sm">
+                        <i class="fa-solid fa-broom"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- 任務內容區 -->
+            <div class="relative flex-1 min-h-0">
+                <div class="h-full overflow-y-auto p-4 sm:p-6 space-y-3" id="todo-list">
+                    <!-- Task items -->
+                </div>
+
+                <!-- 空白提示頁面 -->
+                <div id="empty-state" class="absolute inset-0 hidden flex-col items-center justify-center p-8 text-center opacity-60">
+                    <div class="text-6xl mb-4 text-[var(--color-primary)] opacity-40"><i class="fa-solid fa-clipboard-check"></i></div>
+                    <p class="text-lg font-medium">太棒了，目前沒有待處理的任務！</p>
+                    <p class="text-xs opacity-60 mt-1">在下方建立新任務開始充實的一天。</p>
+                </div>
+            </div>
+
+            <!-- 下方固定：輸入欄 -->
+            <div class="p-4 sm:p-6 border-t border-[var(--color-border)] glass-card">
+                <form id="todo-form" onsubmit="handleAddTask(event)" class="space-y-3">
+                    <div class="flex items-center gap-2 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl p-2 px-3 focus-within:ring-2 focus-within:ring-[var(--color-primary)] transition">
+                        <i class="fa-solid fa-plus opacity-40 text-sm"></i>
+                        <input type="text" id="task-input" placeholder="新增任務 (輸入後按 Enter 即可建立)..." required 
+                            class="flex-1 bg-transparent border-none text-sm focus:outline-none">
+                        <button type="submit" class="bg-[var(--color-primary)] text-white font-medium px-4 py-1.5 rounded-lg text-xs hover:opacity-90 transition">
+                            新增
+                        </button>
+                    </div>
+
+                    <!-- 進階輸入屬性列 -->
+                    <div class="flex flex-wrap items-center gap-3 text-xs opacity-80 px-1">
+                        <!-- 優先順序 -->
+                        <div class="flex items-center gap-1.5">
+                            <i class="fa-solid fa-flag text-xs opacity-60"></i>
+                            <select id="priority-input" class="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-2 py-1 focus:outline-none">
+                                <option value="low">🟢 低優先</option>
+                                <option value="medium" selected>🟡 中優先</option>
+                                <option value="high">🔴 高優先</option>
+                            </select>
+                        </div>
+
+                        <!-- 分類標籤 -->
+                        <div class="flex items-center gap-1.5">
+                            <i class="fa-solid fa-tag text-xs opacity-60"></i>
+                            <select id="category-input" class="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-2 py-1 focus:outline-none">
+                                <option value="工作">工作</option>
+                                <option value="個人">個人</option>
+                                <option value="學習">學習</option>
+                                <option value="健康">健康</option>
+                            </select>
+                        </div>
+
+                        <!-- 截止日期 -->
+                        <div class="flex items-center gap-1.5">
+                            <i class="fa-solid fa-calendar-day text-xs opacity-60"></i>
+                            <input type="date" id="duedate-input" class="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-2 py-1 focus:outline-none">
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <!-- 自訂 Modal -->
+    <div id="custom-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+        <div class="glass-card p-6 rounded-2xl max-w-sm w-full mx-4 text-center space-y-4 border border-[var(--color-border)]">
+            <div id="modal-icon" class="text-4xl text-[var(--color-primary)]"></div>
+            <h3 id="modal-title" class="text-lg font-bold"></h3>
+            <p id="modal-msg" class="text-xs opacity-80 leading-relaxed"></p>
+            <button onclick="closeModal()" class="w-full bg-[var(--color-primary)] text-white font-medium py-2 rounded-xl text-xs">確定</button>
+        </div>
+    </div>
+
+    <!-- 系統設定 Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+        <div class="glass-card p-6 rounded-2xl max-w-md w-full mx-4 space-y-5 border border-[var(--color-border)]">
+            <div class="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+                <h3 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-[var(--color-primary)]"></i> 系統偏好設定
+                </h3>
+                <button onclick="closeSettingsModal()" class="opacity-60 hover:opacity-100 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs">
+                <!-- 佈景主題選擇 -->
+                <div class="flex items-center justify-between">
+                    <span class="font-medium opacity-80">佈景主題 (Theme)</span>
+                    <select id="setting-theme" onchange="changeTheme(this.value)" class="bg-[var(--color-bg)] text-[var(--color-text)] border border-[var(--color-border)] rounded-lg px-2 py-1 font-medium focus:outline-none cursor-pointer">
+                        <option value="system">💻 系統預設</option>
+                        <option value="minimal-light">☀️ 極簡純白</option>
+                        <option value="dark-premium">🌌 高級深色</option>
+                        <option value="cyberpunk">⚡ 賽博朋克</option>
+                        <option value="emerald">🌿 翡翠森林</option>
+                        <option value="sunset">🌅 暮光紫色</option>
+                        <option value="neon-purple">🔮 霓虹魅紫</option>
+                        <option value="midnight-gold">🌙 黑金午夜</option>
+                        <option value="sakura-pink">🌸 櫻花粉黛</option>
+                        <option value="nordic-frost">❄️ 北歐霜雪</option>
+                    </select>
+                </div>
+
+                <!-- 個人名稱偏好 -->
+                <div class="space-y-1.5">
+                    <label class="font-medium opacity-80 block">使用者名稱 (標題個人化)</label>
+                    <input type="text" id="setting-username" placeholder="請輸入您的名字..." class="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]">
+                </div>
+
+                <!-- 預設新增優先級 -->
+                <div class="flex items-center justify-between">
+                    <span class="font-medium opacity-80">預設新增優先順序</span>
+                    <select id="setting-default-priority" class="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-2 py-1 focus:outline-none">
+                        <option value="low">🟢 低優先</option>
+                        <option value="medium">🟡 中優先</option>
+                        <option value="high">🔴 高優先</option>
+                    </select>
+                </div>
+
+                <!-- 預設新增類別 -->
+                <div class="flex items-center justify-between">
+                    <span class="font-medium opacity-80">預設新增分類</span>
+                    <select id="setting-default-category" class="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-2 py-1 focus:outline-none">
+                        <option value="工作">工作</option>
+                        <option value="個人">個人</option>
+                        <option value="學習">學習</option>
+                        <option value="健康">健康</option>
+                    </select>
+                </div>
+
+                <!-- 完成慶祝動畫 -->
+                <div class="flex items-center justify-between">
+                    <span class="font-medium opacity-80">任務完成彩帶特效</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="setting-enable-confetti" class="sr-only peer" checked>
+                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--color-primary)]"></div>
+                    </label>
+                </div>
+
+                <!-- 動態粒子背景 -->
+                <div class="flex items-center justify-between">
+                    <span class="font-medium opacity-80">背景動態粒子效果</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="setting-enable-bg-particles" onchange="toggleBgCanvas(this.checked)" class="sr-only peer" checked>
+                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--color-primary)]"></div>
+                    </label>
+                </div>
+
+                <!-- 危險區域：清除資料 -->
+                <div class="pt-3 border-t border-[var(--color-border)]">
+                    <button onclick="resetAllData()" class="w-full text-red-400 border border-red-500/30 hover:bg-red-500/10 py-2 rounded-xl text-xs transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation"></i> 重置並清除所有數據
+                    </button>
+                </div>
+            </div>
+
+            <div class="pt-2 flex gap-2">
+                <button onclick="saveSettings()" class="flex-1 bg-[var(--color-primary)] text-white font-medium py-2 rounded-xl text-xs hover:opacity-90 transition">
+                    儲存變更
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 核心邏輯 -->
+    <script src="script.js"></script>
+</body>
+</html>
