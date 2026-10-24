@@ -554,7 +554,7 @@ function initGoogleAuth() {
                 cancel_on_tap_outside: true
             });
 
-            // 渲染官方 Google 登入按鈕至側邊欄容器
+            // 渲染官方 Google 登入按鈕至頂部帳號容器
             const btnContainer = document.getElementById('google-signin-btn-container');
             if (btnContainer && !googleUser) {
                 btnContainer.innerHTML = '';
@@ -565,7 +565,7 @@ function initGoogleAuth() {
                     shape: 'pill',
                     text: 'signin_with',
                     locale: 'zh-TW',
-                    width: 240
+                    width: 180
                 });
 
                 // 官方按鈕渲染成功後隱藏備用純 HTML 按鈕
@@ -644,7 +644,7 @@ function applyGoogleUserLogin(userData) {
     showModal('登入成功', `歡迎回來，${userData.name}！已為您成功連結 Google 帳號。`, 'fa-solid fa-circle-check');
 }
 
-// 更新畫面所有與 Google 帳號連動的 UI (側邊欄、頂部 Header、設定視窗)
+// 更新頂部帳號面板與設定視窗中的 Google 帳號狀態
 function updateGoogleUserUI() {
     const signinWrapper = document.getElementById('google-signin-wrapper');
     const profileCard = document.getElementById('google-profile-card');
@@ -652,12 +652,10 @@ function updateGoogleUserUI() {
     const userName = document.getElementById('google-user-name');
     const userEmail = document.getElementById('google-user-email');
 
-    const headerUserText = document.getElementById('header-user-text');
-    const headerAvatarContainer = document.getElementById('header-avatar-container');
     const settingGoogleStatus = document.getElementById('setting-google-status');
 
     if (googleUser) {
-        // 側邊欄：隱藏登入按鈕，顯示個人卡片
+        // 隱藏登入按鈕，顯示個人卡片
         if (signinWrapper) signinWrapper.classList.add('hidden');
         if (profileCard) {
             profileCard.classList.remove('hidden');
@@ -666,12 +664,6 @@ function updateGoogleUserUI() {
         if (userAvatar) userAvatar.src = googleUser.picture || 'icons/icon-64.png';
         if (userName) userName.innerText = googleUser.name;
         if (userEmail) userEmail.innerText = googleUser.email;
-
-        // 頂部 Header：顯示頭像與姓名
-        if (headerUserText) headerUserText.innerText = googleUser.name;
-        if (headerAvatarContainer) {
-            headerAvatarContainer.innerHTML = `<img src="${googleUser.picture || 'icons/icon-64.png'}" alt="Avatar" class="w-full h-full object-cover">`;
-        }
 
         // 系統設定視窗狀態
         if (settingGoogleStatus) {
@@ -685,11 +677,6 @@ function updateGoogleUserUI() {
         if (profileCard) {
             profileCard.classList.add('hidden');
             profileCard.classList.remove('flex');
-        }
-
-        if (headerUserText) headerUserText.innerText = 'Google 登入';
-        if (headerAvatarContainer) {
-            headerAvatarContainer.innerHTML = '<i class="fa-solid fa-user text-[11px]"></i>';
         }
 
         if (settingGoogleStatus) {
