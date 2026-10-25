@@ -3,6 +3,15 @@ body {
     transition: background-color 0.4s ease, color 0.4s ease;
 }
 
+.google-signin-button {
+    background-color: var(--color-card);
+    color: var(--color-text);
+}
+
+.google-signin-button:hover {
+    filter: brightness(1.08);
+}
+
 /* 主題變數定義 */
 :root[data-theme="cyberpunk"] {
     --color-primary: #f43f5e;
