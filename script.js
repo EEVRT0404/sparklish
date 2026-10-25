@@ -300,11 +300,11 @@ function initFilterFromHash() {
 }
 
 function updateViewTitle() {
-    const prefix = userSettings.userName ? `${userSettings.userName} 的` : '';
+    const prefix = userSettings.userName ? `${userSettings.userName} `:'';
     const titleMap = {
-        all: `${prefix} Sparklish 我的一天`,
-        pending: `${prefix}進行中的任務`,
-        completed: `${prefix}已完成的事項`
+        all: `${prefix}我的一天`,
+        pending: `${prefix}我的任務`,
+        completed: `${prefix}我的已完成事項`
     };
     document.getElementById('view-title').innerText = titleMap[currentFilter] || `${prefix} Sparklish`;
 }
