@@ -276,7 +276,7 @@ function setFilter(filter, updateHash = true) {
     }
 
     if (updateHash && window.location.hash.slice(1).toLowerCase() !== filter) {
-        window.location.hash = filter;
+        window.history.replaceState(null, '', `#${filter}`);
     }
 
     updateViewTitle();
