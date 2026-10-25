@@ -8,7 +8,7 @@ let userSettings = JSON.parse(localStorage.getItem('taskmaster_settings')) || {
     enableBgParticles: true
 };
 const FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyB2H5FkLy5uAM37ahwpLe-JXC2Rjs10vT0',
+    apiKey: 'AIzaSyB2H5FkLy5uAM37ahwpLe-JXC2Ris1OvT0',
     authDomain: 'sparklish-app.firebaseapp.com',
     projectId: 'sparklish-app',
     storageBucket: 'sparklish-app.firebasestorage.app',
@@ -864,7 +864,14 @@ async function handleGoogleSignInClick() {
         signInInProgress = false;
         if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
             console.error('Google 登入失敗:', err);
-            showModal('Google 登入失敗', '無法完成登入，請確認 Firebase 的 Google 登入設定和授權網域。', 'fa-solid fa-triangle-exclamation');
+            const message = err.code === 'auth/invalid-api-key'
+                ? 'Firebase API 金鑰無效，請確認程式中的 Firebase 設定和 Firebase 專案設定完全一致。'
+                : err.code === 'auth/unauthorized-domain'
+                    ? '此網站網域尚未加入 Firebase Authentication 的授權網域。'
+                    : err.code === 'auth/operation-not-allowed'
+                        ? 'Firebase 尚未啟用 Google 登入方式。'
+                        : `登入失敗（${err.code || '未知錯誤'}）。請檢查 Firebase Authentication 設定，並查看瀏覽器主控台的錯誤訊息。`;
+            showModal('Google 登入失敗', message, 'fa-solid fa-triangle-exclamation');
         }
     }
 }
