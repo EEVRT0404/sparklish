@@ -7,8 +7,26 @@ let userSettings = JSON.parse(localStorage.getItem('taskmaster_settings')) || {
     enableConfetti: true,
     enableBgParticles: true
 };
-const GOOGLE_CLIENT_ID = '980379621542-ocdrt14dvmdhvakkoe114eb6406v8t85.apps.googleusercontent.com';
-let googleUser = JSON.parse(localStorage.getItem('sparklish_google_user')) || null;
+const FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyB2H5FkLy5uAM37ahwpLe-JXC2Rjs10vT0',
+    authDomain: 'sparklish-app.firebaseapp.com',
+    projectId: 'sparklish-app',
+    storageBucket: 'sparklish-app.firebasestorage.app',
+    messagingSenderId: '318431108286',
+    appId: '1:318431108286:web:6975090f95f5914e7152ef'
+};
+const LOCAL_TASKS_KEY = 'taskmaster_tasks';
+const LOCAL_TASKS_BACKUP_KEY = 'sparklish_local_tasks_backup';
+const CLOUD_CACHE_UID_KEY = 'sparklish_cloud_cache_uid';
+let googleUser = null;
+let firebaseAuth = null;
+let firestore = null;
+let cloudSyncActive = false;
+let cloudUnsubscribe = null;
+let cloudWriteQueue = Promise.resolve();
+let cloudWriteError = null;
+let pendingLocalDataChoice = null;
+let signInInProgress = false;
 let currentFilter = 'all'; // all, pending, completed
 let currentCategory = 'all'; // all, 工作, 個人, 學習, 健康
 let currentTheme = localStorage.getItem('taskmaster_theme') || 'system';
@@ -25,8 +43,8 @@ window.onload = () => {
     updateCurrentDate();
     initFilterFromHash();
 
-    // 初始化 Google 認證系統與 UI
-    initGoogleAuth();
+    // 初始化 Firebase Google 登入與雲端同步
+    initFirebaseAuth();
     updateGoogleUserUI();
 
     // 監聽網址 Hash (#) 變化，支援上一頁/下一頁切換
@@ -92,12 +110,26 @@ function toggleBgCanvas(enabled) {
     }
 }
 
-function resetAllData() {
-    if (confirm('確定要刪除所有待辦事項並重置設定嗎？此操作無法復原！')) {
-        localStorage.removeItem('taskmaster_tasks');
+async function resetAllData() {
+    const cloudWarning = googleUser ? '\n\n此 Google 帳號的雲端任務也會一併刪除。' : '';
+    if (!confirm(`確定要刪除所有待辦事項並重置設定嗎？此操作無法復原！${cloudWarning}`)) {
+        return;
+    }
+
+    try {
+        if (googleUser && firestore) {
+            await cloudWriteQueue;
+            await getUserTasksDocument(googleUser.id).delete();
+        }
+
+        if (cloudUnsubscribe) cloudUnsubscribe();
+        cloudUnsubscribe = null;
+        cloudSyncActive = false;
+        localStorage.removeItem(LOCAL_TASKS_KEY);
+        localStorage.removeItem(LOCAL_TASKS_BACKUP_KEY);
+        localStorage.removeItem(CLOUD_CACHE_UID_KEY);
         localStorage.removeItem('taskmaster_settings');
         localStorage.removeItem('sparklish_google_user');
-        googleUser = null;
         tasks = [];
         userSettings = {
             userName: '',
@@ -106,10 +138,19 @@ function resetAllData() {
             enableConfetti: true,
             enableBgParticles: true
         };
+
+        if (firebaseAuth && firebaseAuth.currentUser) {
+            await firebaseAuth.signOut();
+        }
+        googleUser = null;
         updateGoogleUserUI();
-        saveAndRender();
+        initSettingsUI();
+        renderTasks();
         closeSettingsModal();
-        showModal('重置成功', '所有資料與設定已還原為初始狀態！', 'fa-solid fa-rotate-left');
+        showModal('重置成功', '所有本機資料與此帳號的雲端任務已清除。', 'fa-solid fa-rotate-left');
+    } catch (err) {
+        console.error('重置資料失敗:', err);
+        showModal('重置失敗', '資料未能完整清除，請確認網路連線後再試。', 'fa-solid fa-triangle-exclamation');
     }
 }
 
@@ -274,8 +315,11 @@ function setCategoryFilter(cat) {
 }
 
 function saveAndRender() {
-    localStorage.setItem('taskmaster_tasks', JSON.stringify(tasks));
+    localStorage.setItem(LOCAL_TASKS_KEY, JSON.stringify(tasks));
     renderTasks();
+    if (cloudSyncActive && googleUser && firestore) {
+        queueCloudTasksWrite(googleUser.id, tasks);
+    }
 }
 
 // --- 渲染 UI ---
@@ -540,108 +584,220 @@ function animateParticles() {
 }
 
 // ==========================================
-// Google Identity Services (GIS) 登入系統
+// Firebase Google 登入與 Firestore 同步
 // ==========================================
 
-// 初始化 Google GIS SDK
-function initGoogleAuth() {
-    if (window.google?.accounts?.id) {
-        try {
-            google.accounts.id.initialize({
-                client_id: GOOGLE_CLIENT_ID,
-                callback: handleGoogleCredentialResponse,
-                auto_select: false,
-                cancel_on_tap_outside: true
-            });
-
-            // 渲染官方 Google 登入按鈕至頂部帳號容器
-            const btnContainer = document.getElementById('google-signin-btn-container');
-            if (btnContainer && !googleUser) {
-                btnContainer.innerHTML = '';
-                google.accounts.id.renderButton(btnContainer, {
-                    theme: 'outline',
-                    size: 'large',
-                    type: 'standard',
-                    shape: 'pill',
-                    text: 'signin_with',
-                    locale: 'zh-TW',
-                    width: 180
-                });
-
-                // 官方按鈕渲染成功後隱藏備用純 HTML 按鈕
-                const fallbackBtn = document.getElementById('google-signin-btn');
-                if (fallbackBtn) fallbackBtn.classList.add('hidden');
-            }
-
-            // 若尚未登入，嘗試呼叫 One Tap 提示
-            if (!googleUser) {
-                google.accounts.id.prompt();
-            }
-        } catch (err) {
-            console.warn('Google Identity Services 初始化提示:', err);
-        }
-    } else {
-        // SDK 還在載入時，每隔 500ms 重試一次，直到載入完成
-        setTimeout(initGoogleAuth, 500);
-    }
-}
-
-// 安全解析 JWT Token Payload (支援繁體中文等多位元組字元)
-function parseJwt(token) {
+function initFirebaseAuth() {
     try {
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join(''));
-        return JSON.parse(jsonPayload);
-    } catch (e) {
-        console.error("JWT 解析失敗:", e);
-        return null;
+        const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
+        firebaseAuth = app.auth();
+        firestore = app.firestore();
+        firebaseAuth.onAuthStateChanged(
+            user => handleFirebaseAuthState(user).catch(handleCloudLoginError),
+            err => handleCloudLoginError(err)
+        );
+    } catch (err) {
+        handleCloudLoginError(err);
     }
 }
 
-// 接收 Google 官方登入成功後的憑證回傳
-function handleGoogleCredentialResponse(response) {
-    const payload = parseJwt(response.credential);
-    if (!payload) {
-        showModal('登入錯誤', '無法解析 Google 帳號憑證，請稍後再試。', 'fa-solid fa-triangle-exclamation');
+function getUserTasksDocument(userId) {
+    return firestore.collection('users').doc(userId).collection('app').doc('data');
+}
+
+function readTasksFromStorage(key) {
+    try {
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(stored) ? stored : [];
+    } catch (err) {
+        console.error(`無法讀取本機任務資料 ${key}:`, err);
+        return [];
+    }
+}
+
+function saveCloudTaskCache(userId, taskList) {
+    tasks = taskList;
+    localStorage.setItem(LOCAL_TASKS_KEY, JSON.stringify(tasks));
+    localStorage.setItem(CLOUD_CACHE_UID_KEY, userId);
+    renderTasks();
+}
+
+function requestLocalDataChoice() {
+    return new Promise(resolve => {
+        pendingLocalDataChoice = resolve;
+        document.getElementById('local-data-status').classList.add('hidden');
+        document.getElementById('local-data-keep-cloud').disabled = false;
+        document.getElementById('local-data-overwrite').disabled = false;
+        document.getElementById('local-data-modal').classList.remove('hidden');
+    });
+}
+
+function resolveLocalDataChoice(overwriteCloud) {
+    if (!pendingLocalDataChoice) return;
+    document.getElementById('local-data-status').classList.remove('hidden');
+    document.getElementById('local-data-keep-cloud').disabled = true;
+    document.getElementById('local-data-overwrite').disabled = true;
+    const resolve = pendingLocalDataChoice;
+    pendingLocalDataChoice = null;
+    resolve(overwriteCloud);
+}
+
+function closeLocalDataChoice() {
+    document.getElementById('local-data-modal').classList.add('hidden');
+    document.getElementById('local-data-keep-cloud').disabled = false;
+    document.getElementById('local-data-overwrite').disabled = false;
+}
+
+async function handleFirebaseAuthState(user) {
+    if (cloudUnsubscribe) cloudUnsubscribe();
+    cloudUnsubscribe = null;
+    cloudSyncActive = false;
+
+    if (!user) {
+        handleFirebaseSignOutState();
         return;
     }
 
-    const userData = {
-        id: payload.sub,
-        name: payload.name || payload.given_name || 'Google 使用者',
-        givenName: payload.given_name || payload.name || '',
-        email: payload.email || '',
-        picture: payload.picture || '',
-        provider: 'google',
-        loggedInAt: new Date().toISOString()
+    googleUser = {
+        id: user.uid,
+        name: user.displayName || user.email || 'Google 使用者',
+        email: user.email || '',
+        picture: user.photoURL || ''
     };
-
-    applyGoogleUserLogin(userData);
-}
-
-// 套用登入資訊並儲存至本地
-function applyGoogleUserLogin(userData) {
-    googleUser = userData;
     localStorage.setItem('sparklish_google_user', JSON.stringify(googleUser));
-
-    // 自動同步使用者名稱至標題
-    if (userData.name) {
-        userSettings.userName = userData.name;
+    if (user.displayName) {
+        userSettings.userName = user.displayName;
         localStorage.setItem('taskmaster_settings', JSON.stringify(userSettings));
     }
-
     updateGoogleUserUI();
     updateViewTitle();
 
-    // 觸發彩帶慶祝
-    if (typeof confetti === 'function' && userSettings.enableConfetti) {
-        confetti({ particleCount: 70, spread: 60, origin: { y: 0.8 } });
+    const cachedUid = localStorage.getItem(CLOUD_CACHE_UID_KEY);
+    if (cachedUid && cachedUid !== user.uid) {
+        localStorage.removeItem(LOCAL_TASKS_KEY);
+        localStorage.removeItem(CLOUD_CACHE_UID_KEY);
+        tasks = [];
+        renderTasks();
+    }
+    const localTasks = readTasksFromStorage(LOCAL_TASKS_KEY);
+    const hasUnmigratedLocalTasks = cachedUid === null && localTasks.length > 0;
+    let shouldOverwriteCloud = false;
+
+    if (hasUnmigratedLocalTasks) {
+        shouldOverwriteCloud = await requestLocalDataChoice();
+        if (!shouldOverwriteCloud) {
+            localStorage.setItem(LOCAL_TASKS_BACKUP_KEY, JSON.stringify(localTasks));
+        }
     }
 
-    showModal('登入成功', `歡迎回來，${userData.name}！已為您成功連結 Google 帳號。`, 'fa-solid fa-circle-check');
+    const userTasksDocument = getUserTasksDocument(user.uid);
+    if (shouldOverwriteCloud) {
+        try {
+            await userTasksDocument.set({
+                tasks: localTasks,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (err) {
+            cloudSyncActive = false;
+            console.error('覆蓋雲端任務失敗:', err);
+            closeLocalDataChoice();
+            showModal('上傳失敗', '本機任務仍保留在這台裝置，雲端資料沒有被覆蓋。請檢查網路與 Firebase 設定後再登入重試。', 'fa-solid fa-triangle-exclamation');
+            signInInProgress = false;
+            return;
+        }
+        localStorage.removeItem(LOCAL_TASKS_BACKUP_KEY);
+        saveCloudTaskCache(user.uid, localTasks);
+    } else {
+        if (hasUnmigratedLocalTasks) {
+            tasks = [];
+            renderTasks();
+        }
+        try {
+            const snapshot = await userTasksDocument.get();
+            const cloudTasks = snapshot.exists && Array.isArray(snapshot.data().tasks)
+                ? snapshot.data().tasks
+                : [];
+            saveCloudTaskCache(user.uid, cloudTasks);
+        } catch (err) {
+            cloudSyncActive = false;
+            console.error('載入雲端任務失敗:', err);
+            closeLocalDataChoice();
+            showModal('雲端載入失敗', '雲端任務目前無法載入。保留的本機資料沒有被覆蓋，請確認網路與 Firebase 設定後重試。', 'fa-solid fa-triangle-exclamation');
+            signInInProgress = false;
+            return;
+        }
+    }
+
+    cloudSyncActive = true;
+    subscribeToCloudTasks(user.uid, userTasksDocument);
+    closeLocalDataChoice();
+
+    if (signInInProgress) {
+        signInInProgress = false;
+        if (typeof confetti === 'function' && userSettings.enableConfetti) {
+            confetti({ particleCount: 70, spread: 60, origin: { y: 0.8 } });
+        }
+        showModal('登入成功', `歡迎回來，${googleUser.name}！雲端任務已載入。`, 'fa-solid fa-circle-check');
+    }
+}
+
+function subscribeToCloudTasks(userId, userTasksDocument) {
+    cloudUnsubscribe = userTasksDocument.onSnapshot(snapshot => {
+        if (!cloudSyncActive || !googleUser || googleUser.id !== userId) return;
+        const cloudTasks = snapshot.exists && Array.isArray(snapshot.data().tasks)
+            ? snapshot.data().tasks
+            : [];
+        saveCloudTaskCache(userId, cloudTasks);
+    }, err => {
+        cloudSyncActive = false;
+        cloudWriteError = err;
+        console.error('雲端同步中斷:', err);
+        showModal('雲端同步中斷', '目前無法讀取雲端更新。你的本機畫面仍保留，請檢查網路連線。', 'fa-solid fa-triangle-exclamation');
+    });
+}
+
+function queueCloudTasksWrite(userId, taskList) {
+    const taskSnapshot = JSON.parse(JSON.stringify(taskList));
+    cloudWriteQueue = cloudWriteQueue.then(async () => {
+        if (!cloudSyncActive || !googleUser || googleUser.id !== userId) return;
+        await getUserTasksDocument(userId).set({
+            tasks: taskSnapshot,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        cloudWriteError = null;
+    }).catch(err => {
+        cloudWriteError = err;
+        console.error('儲存雲端任務失敗:', err);
+        showModal('雲端儲存失敗', '這次變更目前只保存在這台裝置，尚未同步到雲端。請檢查網路後再試。', 'fa-solid fa-triangle-exclamation');
+    });
+}
+
+function handleCloudLoginError(err) {
+    console.error('Firebase 初始化或登入狀態錯誤:', err);
+    showModal('Firebase 連線失敗', '無法連接 Firebase。請確認網路、Firebase 設定及 Firestore 規則後再重新整理。', 'fa-solid fa-triangle-exclamation');
+    signInInProgress = false;
+}
+
+function handleFirebaseSignOutState() {
+    if (cloudUnsubscribe) cloudUnsubscribe();
+    cloudUnsubscribe = null;
+    cloudSyncActive = false;
+    googleUser = null;
+    localStorage.removeItem('sparklish_google_user');
+
+    const hadCloudCache = localStorage.getItem(CLOUD_CACHE_UID_KEY) !== null;
+    localStorage.removeItem(CLOUD_CACHE_UID_KEY);
+    if (hadCloudCache) localStorage.removeItem(LOCAL_TASKS_KEY);
+
+    const savedLocalTasks = localStorage.getItem(LOCAL_TASKS_BACKUP_KEY);
+    if (savedLocalTasks !== null) {
+        localStorage.setItem(LOCAL_TASKS_KEY, savedLocalTasks);
+        localStorage.removeItem(LOCAL_TASKS_BACKUP_KEY);
+    }
+    tasks = readTasksFromStorage(LOCAL_TASKS_KEY);
+    updateGoogleUserUI();
+    updateViewTitle();
+    renderTasks();
 }
 
 // 更新頂部帳號面板與設定視窗中的 Google 帳號狀態
@@ -686,40 +842,54 @@ function updateGoogleUserUI() {
     }
 }
 
-// 點擊「使用 Google 登入」或頂部頭像觸發
-function handleGoogleSignInClick() {
+// 點擊 Google 按鈕登入，已登入時則提供登出選項
+async function handleGoogleSignInClick() {
     if (googleUser) {
         if (confirm(`目前已登入：${googleUser.name} (${googleUser.email})\n\n確定要登出 Google 帳號嗎？`)) {
-            googleSignOut();
+            await googleSignOut();
         }
         return;
     }
 
-    if (window.google?.accounts?.id) {
-        try {
-            google.accounts.id.prompt();
-        } catch (e) {
-            console.warn(e);
+    if (!firebaseAuth) {
+        showModal('Firebase 載入中', 'Firebase 登入服務尚未準備完成，請稍候再試。', 'fa-brands fa-google');
+        return;
+    }
+
+    signInInProgress = true;
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await firebaseAuth.signInWithPopup(provider);
+    } catch (err) {
+        signInInProgress = false;
+        if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+            console.error('Google 登入失敗:', err);
+            showModal('Google 登入失敗', '無法完成登入，請確認 Firebase 的 Google 登入設定和授權網域。', 'fa-solid fa-triangle-exclamation');
         }
-    } else {
-        showModal('Google 載入中', '正在連線 Google 登入服務，請稍候 1~2 秒後再試。', 'fa-brands fa-google');
     }
 }
 
 // 登出 Google 帳號
-function googleSignOut() {
-    googleUser = null;
-    localStorage.removeItem('sparklish_google_user');
-    
-    if (window.google?.accounts?.id) {
-        try {
-            google.accounts.id.disableAutoSelect();
-        } catch (e) {}
+async function googleSignOut() {
+    if (!firebaseAuth) return;
+    try {
+        await cloudWriteQueue;
+        if (cloudWriteError) {
+            if (!googleUser) return;
+            cloudSyncActive = true;
+            cloudWriteError = null;
+            queueCloudTasksWrite(googleUser.id, tasks);
+            await cloudWriteQueue;
+            if (cloudWriteError) {
+                cloudSyncActive = false;
+                showModal('暫時無法登出', '有任務尚未成功同步；為避免遺失，請確認網路後再試一次。', 'fa-solid fa-triangle-exclamation');
+                return;
+            }
+        }
+        await firebaseAuth.signOut();
+        showModal('已登出', '雲端任務已從畫面清除；重新登入後會再次載入。', 'fa-solid fa-arrow-right-from-bracket');
+    } catch (err) {
+        console.error('Google 登出失敗:', err);
+        showModal('登出失敗', '目前無法登出，請稍後再試。', 'fa-solid fa-triangle-exclamation');
     }
-
-    updateGoogleUserUI();
-    updateViewTitle();
-    // 重新渲染 Google 官方登入按鈕
-    initGoogleAuth();
-    showModal('已登出', '您已成功登出 Google 帳號。', 'fa-solid fa-arrow-right-from-bracket');
 }
