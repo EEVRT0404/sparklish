@@ -3,8 +3,6 @@
   "short_name": "Sparklish",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#090d16",
-  "theme_color": "#6366f1",
   "icons": [
     {
       "src": "icons/icon-64.png",
