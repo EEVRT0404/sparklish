@@ -1,6 +1,6 @@
 {
-  "name": "Sparklish 閃光達成",
-  "short_name": "Sparklish",
+  "name": "SparkDay 閃光待辦",
+  "short_name": "SparkDay",
   "start_url": "./index.html",
   "display": "standalone",
   "icons": [

@@ -306,7 +306,7 @@ function updateViewTitle() {
         pending: `${prefix}我的任務`,
         completed: `${prefix}我的已完成事項`
     };
-    document.getElementById('view-title').innerText = titleMap[currentFilter] || `${prefix} Sparklish`;
+    document.getElementById('view-title').innerText = titleMap[currentFilter] || `${prefix} SparkDay`;
 }
 
 function setCategoryFilter(cat) {
@@ -461,7 +461,7 @@ function exportTasks() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tasks, null, 2));
     const dlAnchorElem = document.createElement('a');
     dlAnchorElem.setAttribute("href", dataStr);
-    dlAnchorElem.setAttribute("download", `sparklish_backup_${new Date().toISOString().slice(0,10)}.json`);
+    dlAnchorElem.setAttribute("download", `sparkday_backup_${new Date().toISOString().slice(0,10)}.json`);
     dlAnchorElem.click();
     showModal('匯出成功', '已順利下載 JSON 備份檔！', 'fa-solid fa-file-export');
 }
