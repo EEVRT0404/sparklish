@@ -1,6 +1,6 @@
 {
-  "name": "SparkDay 閃光待辦",
-  "short_name": "SparkDay",
+  "name": "SparkTask 閃光待辦",
+  "short_name": "SparkTask",
   "start_url": "./index.html",
   "display": "standalone",
   "icons": [
